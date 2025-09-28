@@ -21,7 +21,7 @@ local fbi = {
 	real_chars = {};
 };
 
-local api = {};
+local API = {};
 
 local try = function(func, ...)
 	local success, result = pcall(func, ...);
@@ -113,7 +113,7 @@ end;
 -- @param bool (boolean) - true to enable reanimation, false to disable.
 -- @param remote (Instance) [optional] - A RemoteEvent or RemoteFunction to fire.
 -- @param args (table) [optional] - Arguments for the remote.
-api.reanimate = function(bool, remote, args)
+API.reanimate = function(bool, remote, args)
 	if bool ~= true and bool ~= false then
 		warn("FBI: " .. ("bad argument #1 to 'reanimate' (boolean expected, got %s)"):format(typeof(bool)));
 		return;
@@ -165,7 +165,7 @@ api.reanimate = function(bool, remote, args)
 		end;
 		fbi.connections.hb = fbi.services.run_service.Heartbeat:Connect(function()
 			if not real_char or not real_char.Parent or not cloned_char or not cloned_char.Parent then
-				api.reanimate(false, remote, args);
+				API.reanimate(false, remote, args);
 				return;
 			end;
 			for _, p in real_char:GetChildren() do
@@ -179,16 +179,16 @@ api.reanimate = function(bool, remote, args)
 		local real_humanoid = real_char.Humanoid;
 		local cloned_humanoid = cloned_char.Humanoid;
 		fbi.connections.died = real_humanoid.Died:Connect(function()
-			api.reanimate(false, remote, args);
+			API.reanimate(false, remote, args);
 		end);
 		fbi.connections.real_char_child_removed = real_char.ChildRemoved:Connect(function(child)
 			if child == real_humanoid or child == real_hrp then
-				api.reanimate(false, remote, args);
+				API.reanimate(false, remote, args);
 			end;
 		end);
 		fbi.connections.clone_char_child_removed = cloned_char.ChildRemoved:Connect(function(child)
 			if child == cloned_humanoid then
-				api.reanimate(false, remote, args);
+				API.reanimate(false, remote, args);
 			end;
 		end);
 		fbi.connections.clone_died = cloned_humanoid.Died:Connect(function()
@@ -196,12 +196,12 @@ api.reanimate = function(bool, remote, args)
 			if current_real_humanoid and current_real_humanoid.Health > 0 then
 				current_real_humanoid.Health = 0;
 			else
-				api.reanimate(false, remote, args);
+				API.reanimate(false, remote, args);
 			end;
 		end);
 		fbi.connections.character_removing = player.CharacterRemoving:Connect(function(character_being_removed)
 			if character_being_removed == cloned_char or character_being_removed == real_char then
-				api.reanimate(false, remote, args);
+				API.reanimate(false, remote, args);
 			end;
 		end);
 		if remote then
@@ -259,14 +259,14 @@ end;
 
 --- Returns true if the local player is currently reanimated.
 -- @return boolean
-api.is_reanimated = function()
+API.isReanimated = function()
 	return fbi.flags.reanimated;
 end;
 
 --- Gets the active clone character model for a player.
 -- @param player (Player) [optional] - The player to get the clone of. Defaults to LocalPlayer.
 -- @return Model | nil
-api.get_clone = function(player)
+API.getClone = function(player)
 	player = player or try(get_local_player);
 	if not player then
 		return nil;
@@ -277,7 +277,7 @@ end;
 --- Gets the real character model for a player.
 -- @param player (Player) [optional] - The player to get the real character of. Defaults to LocalPlayer.
 -- @return Model | nil
-api.get_real_character = function(player)
+API.getRealCharacter = function(player)
 	player = player or try(get_local_player);
 	if not player then
 		return nil;
@@ -285,4 +285,4 @@ api.get_real_character = function(player)
 	return fbi.real_chars[player];
 end;
 
-return api;
+return API;
