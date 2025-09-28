@@ -2,6 +2,19 @@
 
 A self-contained Roblox module for networkless (netless) reanimation, utilizing a vulnerability found in most ragdoll systems.
 
+### v1.1.0
+- **Fixed** issue where GUIs would disappear after reanimating.  
+- **Fixed** chat not working after reanimating.  
+- **Changed** transparent limbs from the clone to the real character.  
+- **Changed** humanoid name display to be hidden.  
+- **Added** check to remove `ForceField` from clone.  
+- **Added** listeners for (probably) all death-related events to cleanup reanimation.  
+- **Added** animation refresh on reanimate; clones now animate by default.  
+- **Improved** unreanimate cleanup by fully disconnecting all event listeners.  
+
+### v1.0.0
+- Initial release of FBI Reanimation Module.
+
 ## Table of Contents
 
 -   [API Reference](#api-reference)
