@@ -84,11 +84,10 @@ local clone_char = function(model)
 	new_clone.Name = "Reanimation";
 	new_clone.Parent = fbi.services.workspace;
 	new_clone:WaitForChild("Animate").Disabled = true;
+    new_clone.Humanoid.RequiresNeck = false;
+    new_clone.Humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None;
 	if new_clone:FindFirstChildWhichIsA("ForceField") then
 		new_clone:FindFirstChildWhichIsA("ForceField"):Destroy();
-	end;
-	if new_clone:FindFirstChildWhichIsA("Humanoid") then
-		new_clone:FindFirstChildWhichIsA("Humanoid").DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None;
 	end;
 	return new_clone;
 end;
@@ -143,7 +142,7 @@ API.reanimate = function(bool, remote, args)
 			return;
 		end;
 		fbi.clones[player] = cloned_char;
-		set_model_transparency(real_char, 1);
+		set_model_transparency(cloned_char, 1);
 		local player_gui = player:FindFirstChildWhichIsA("PlayerGui");
 		if player_gui then
 			for _, gui in player_gui:GetChildren() do
@@ -153,7 +152,6 @@ API.reanimate = function(bool, remote, args)
 			end;
 		end;
 		player.Character = cloned_char;
-		fbi.services.workspace.Camera.CameraSubject = cloned_char.Humanoid;
 		cloned_char:WaitForChild("Animate").Disabled = true;
 		cloned_char:WaitForChild("Animate").Disabled = false;
 		if player_gui then
@@ -242,9 +240,6 @@ API.reanimate = function(bool, remote, args)
 				end;
 			end;
 			player.Character = real_char;
-			if real_char:FindFirstChild("Humanoid") then
-				fbi.services.workspace.Camera.CameraSubject = real_char.Humanoid;
-			end
 			if player_gui then
 				for _, gui in player_gui:GetChildren() do
 					if gui:IsA("ScreenGui") and not gui.ResetOnSpawn then
