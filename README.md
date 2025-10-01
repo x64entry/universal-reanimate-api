@@ -2,7 +2,7 @@
 
 A self-contained Roblox module for networkless (netless) reanimation, utilizing a vulnerability found in most ragdoll systems.
 
-### v1.1.0
+### v1.2.0
 - **Reverted** the previous transparent limbs update.
 - **Disabled** `RequiresNeck` in clone humanoid to prevent unwanted death.
 
