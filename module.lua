@@ -5,6 +5,7 @@ local fbi = {
 		replicated = game:GetService("ReplicatedStorage");
 		run_service = game:GetService("RunService");
 		user_input_service = game:GetService("UserInputService");
+        http_service = game:GetService("HttpService");
 	};
 	flags = {
 		reanimated = false;
@@ -17,24 +18,22 @@ local fbi = {
 		character_removing = nil;
 		clone_died = nil;
 		clone_char_child_removed = nil;
+        animation_hb = nil;
 	};
 	real_chars = {};
+	
+    animation = {
+        cache = {};
+        state = {
+            is_playing = false;
+            current_url = nil;
+            speed = 1.0;
+        };
+        original_transforms = {};
+    };
 };
 
 local API = {};
-
-local try = function(func, ...)
-	local success, result = pcall(func, ...);
-	if not success then
-		warn("FBI Error: " .. tostring(result));
-		return nil;
-	end;
-	if typeof(result) == "string" then
-		warn("FBI: " .. result);
-		return nil;
-	end;
-	return result;
-end;
 
 local set_model_transparency = function(model, transparency)
 	if not model then
@@ -94,12 +93,10 @@ end;
 
 local fire_remote = function(remote, ...)
 	if typeof(remote) ~= "Instance" then
-		warn("FBI: " .. ("bad argument to 'fire_remote' (Instance expected, got %s)"):format(typeof(remote)));
-		return;
+		return ("bad argument to 'fire_remote' (Instance expected, got %s)"):format(typeof(remote));
 	end;
 	if not (remote:IsA("RemoteEvent") or remote:IsA("RemoteFunction")) then
-		warn("FBI: " .. ("bad argument to 'fire_remote' (RemoteEvent or RemoteFunction expected, got %s)"):format(remote.ClassName));
-		return;
+		return ("bad argument to 'fire_remote' (RemoteEvent or RemoteFunction expected, got %s)"):format(remote.ClassName);
 	end;
 	if remote:IsA("RemoteEvent") then
 		remote:FireServer(...);
@@ -108,38 +105,60 @@ local fire_remote = function(remote, ...)
 	end;
 end;
 
+--- Stops any currently playing animation.
+API.stop_animation = function()
+    if not fbi.animation.state.is_playing then return end;
+    
+    if fbi.connections.animation_hb then
+        fbi.connections.animation_hb:Disconnect();
+        fbi.connections.animation_hb = nil;
+    end
+
+    local player = get_local_player();
+    if typeof(player) == "string" then return player end;
+
+    local real_char = API.get_real_character(player);
+    if real_char then
+        for joint, original_transform in pairs(fbi.animation.original_transforms) do
+            if joint and joint.Parent then
+                joint.Transform = original_transform;
+            end
+        end
+    end
+    
+    table.clear(fbi.animation.original_transforms);
+    fbi.animation.state = { is_playing = false, current_url = nil, speed = 1.0 };
+end;
+
 --- Toggles the Reanimate state.
 -- @param bool (boolean) - true to enable reanimation, false to disable.
 -- @param remote (Instance) [optional] - A RemoteEvent or RemoteFunction to fire.
 -- @param args (table) [optional] - Arguments for the remote.
 API.reanimate = function(bool, remote, args)
 	if bool ~= true and bool ~= false then
-		warn("FBI: " .. ("bad argument #1 to 'reanimate' (boolean expected, got %s)"):format(typeof(bool)));
-		return;
+		return ("bad argument #1 to 'reanimate' (boolean expected, got %s)"):format(typeof(bool));
 	end;
-	local player = try(get_local_player);
-	if not player then
-		return;
-	end;
+	local player = get_local_player();
+	if typeof(player) == "string" then return player end;
+
 	if bool then
 		if fbi.flags.reanimated then
-			warn("FBI: Already reanimated.");
-			return;
+			return "Already reanimated.";
 		end;
-		local real_char = try(get_char, player);
-		if not real_char or not real_char:FindFirstChild("Humanoid") then
-			return;
+		local real_char = get_char(player);
+        if typeof(real_char) == "string" then return real_char end;
+		if not real_char:FindFirstChild("Humanoid") then
+			return "Real character is missing a Humanoid.";
 		end;
 		local real_hrp = real_char:FindFirstChild("HumanoidRootPart")
 		if not real_hrp then
-			warn("FBI: Real character is missing a HumanoidRootPart, cannot reanimate.");
-			return;
+			return "Real character is missing a HumanoidRootPart, cannot reanimate.";
 		end
 		fbi.real_chars[player] = real_char;
-		local cloned_char = try(clone_char, real_char);
-		if not cloned_char or not cloned_char:FindFirstChild("Humanoid") then
-			warn("FBI: Cloned character failed to create or is missing a Humanoid.");
-			return;
+		local cloned_char = clone_char(real_char);
+        if typeof(cloned_char) == "string" then return cloned_char end;
+		if not cloned_char:FindFirstChild("Humanoid") then
+			return "Cloned character failed to create or is missing a Humanoid.";
 		end;
 		fbi.clones[player] = cloned_char;
 		set_model_transparency(cloned_char, 1);
@@ -203,15 +222,18 @@ API.reanimate = function(bool, remote, args)
 			end;
 		end);
 		if remote then
-			fire_remote(remote, unpack(args or {}));
+			local err = fire_remote(remote, unpack(args or {}));
+            if err then return err end;
 		end;
 		fbi.flags.reanimated = true;
 	else
 		if not fbi.flags.reanimated then
 			return;
 		end;
+        API.stop_animation();
 		if remote then
-			fire_remote(remote, unpack(args or {}));
+			local err = fire_remote(remote, unpack(args or {}));
+            if err then return err end;
 		end;
 		for key, connection in pairs(fbi.connections) do
 			if connection then
@@ -252,31 +274,123 @@ API.reanimate = function(bool, remote, args)
 	end;
 end;
 
+--- Plays an animation on the reanimated character.
+-- @param url (string) - The URL of the keyframe script.
+-- @param speed (number) [optional] - The playback speed multiplier. Defaults to 1.
+API.play_animation = function(url, speed)
+    if not fbi.flags.reanimated then
+        return "Cannot play animation, not reanimated.";
+    end
+    
+    local player = get_local_player();
+    if typeof(player) == "string" then return player end;
+    
+    local real_char = API.get_real_character(player);
+    if not real_char then 
+        return "Cannot play animation, real character not found.";
+    end
+    
+    if fbi.animation.state.is_playing and fbi.animation.state.current_url == url then
+        API.stop_animation();
+        return;
+    end
+    
+    API.stop_animation();
+    
+    local anim = fbi.animation;
+    anim.state.speed = tonumber(speed) or 1.0;
+
+    local keyframe_data = anim.cache[url];
+    if not keyframe_data then
+        local response = fbi.services.http_service:HttpGet(url);
+        local loaded_fn = loadstring(response);
+		if typeof(loaded_fn) ~= "function" then return "Animation Error: Invalid script from URL." end;
+        
+        keyframe_data = loaded_fn();
+        if typeof(keyframe_data) ~= "table" then return "Animation Error: Script from URL did not return a table." end;
+        
+        anim.cache[url] = keyframe_data;
+    end
+
+    local keyframes = keyframe_data[next(keyframe_data)];
+	if not keyframes or #keyframes == 0 then
+		return "No keyframes array found for animation URL: " .. url;
+	end
+
+    table.clear(anim.original_transforms);
+    for _, joint in ipairs(real_char:GetDescendants()) do
+        if joint:IsA("Motor6D") then
+            anim.original_transforms[joint] = joint.Transform;
+        end
+    end
+
+    anim.state.is_playing = true;
+    anim.state.current_url = url;
+    
+    local total_duration = keyframes[#keyframes].Time;
+	if total_duration <= 0 then API.stop_animation(); return end;
+	
+	local elapsed_time = 0;
+	
+	fbi.connections.animation_hb = fbi.services.run_service.Heartbeat:Connect(function(deltaTime)
+		if not anim.state.is_playing then return end;
+		
+		elapsed_time = (elapsed_time + (deltaTime * anim.state.speed)) % total_duration;
+		
+		local current_frame, next_frame;
+		for i = 1, #keyframes - 1 do
+			if elapsed_time >= keyframes[i].Time and elapsed_time < keyframes[i+1].Time then
+				current_frame = keyframes[i];
+				next_frame = keyframes[i+1];
+				break;
+			end
+		end
+		if not current_frame then
+			current_frame = keyframes[#keyframes];
+			next_frame = keyframes[1];
+		end
+		
+		local frame_duration = next_frame.Time - current_frame.Time;
+		if frame_duration < 0 then frame_duration = frame_duration + total_duration end;
+
+		local alpha = (frame_duration > 0) and (elapsed_time - current_frame.Time) / frame_duration or 0;
+		
+		for joint, original_transform in pairs(anim.original_transforms) do
+            if joint and joint.Parent then
+                local pose1_cframe = current_frame.Data[joint.Name];
+                local pose2_cframe = next_frame.Data[joint.Name];
+                
+                if pose1_cframe and pose2_cframe then
+                    joint.Transform = original_transform * pose1_cframe:Lerp(pose2_cframe, alpha);
+                elseif pose1_cframe then
+                    joint.Transform = original_transform * pose1_cframe;
+                end
+            end
+		end
+	end);
+end;
+
 --- Returns true if the local player is currently reanimated.
 -- @return boolean
-API.isReanimated = function()
+API.is_reanimated = function()
 	return fbi.flags.reanimated;
 end;
 
 --- Gets the active clone character model for a player.
 -- @param player (Player) [optional] - The player to get the clone of. Defaults to LocalPlayer.
 -- @return Model | nil
-API.getClone = function(player)
-	player = player or try(get_local_player);
-	if not player then
-		return nil;
-	end;
+API.get_clone = function(player)
+	player = player or get_local_player();
+	if typeof(player) == "string" then return nil end;
 	return fbi.clones[player];
 end;
 
 --- Gets the real character model for a player.
 -- @param player (Player) [optional] - The player to get the real character of. Defaults to LocalPlayer.
 -- @return Model | nil
-API.getRealCharacter = function(player)
-	player = player or try(get_local_player);
-	if not player then
-		return nil;
-	end;
+API.get_real_character = function(player)
+	player = player or get_local_player();
+	if typeof(player) == "string" then return nil end;
 	return fbi.real_chars[player];
 end;
 
