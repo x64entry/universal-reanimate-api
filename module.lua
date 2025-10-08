@@ -9,7 +9,6 @@ local fbi = {
 	};
 	flags = {
 		reanimated = false;
-        is_animating = false;
 	};
 	clones = {};
 	connections = {
@@ -29,8 +28,12 @@ local fbi = {
             is_playing = false;
             current_url = nil;
             speed = 1.0;
+            keyframes = nil;
+            total_duration = 0;
+            elapsed_time = 0;
         };
-        original_transforms = {};
+        original_motor_c0s = {};
+        joints = {};
     };
 };
 
@@ -64,14 +67,6 @@ local get_char = function(player)
 		return ("Player %s has no active character."):format(player.Name);
 	end;
 	return character;
-end;
-
-local get_clone = function(player)
-	local clone_char = fbi.clones[player];
-	if not clone_char or not clone_char.Parent then
-		return ("No clone found for player %s."):format(player.Name);
-	end;
-	return clone_char;
 end;
 
 local clone_char = function(model)
@@ -118,18 +113,18 @@ API.stop_animation = function()
     local player = get_local_player();
     if typeof(player) == "string" then return player end;
 
-    local real_char = API.get_real_character(player);
-    if real_char then
-        for joint, original_transform in pairs(fbi.animation.original_transforms) do
-            if joint and joint.Parent then
-                joint.Transform = original_transform;
+    local clone_char = API.get_clone(player);
+    if clone_char then
+        for motor, orig_c0 in pairs(fbi.animation.original_motor_c0s) do
+            if motor and motor.Parent then
+                motor.C0 = orig_c0;
             end
         end
     end
     
-    table.clear(fbi.animation.original_transforms);
-    fbi.animation.state = { is_playing = false, current_url = nil, speed = 1.0 };
-    fbi.flags.is_animating = false; -- Allow main heartbeat to resume full sync
+    table.clear(fbi.animation.original_motor_c0s);
+    table.clear(fbi.animation.joints);
+    fbi.animation.state = { is_playing = false, current_url = nil, speed = 1.0, keyframes = nil, total_duration = 0, elapsed_time = 0 };
 end;
 
 --- Toggles the Reanimate state.
@@ -187,22 +182,13 @@ API.reanimate = function(bool, remote, args)
 				API.reanimate(false, remote, args);
 				return;
 			end;
-            
-            if fbi.flags.is_animating then
-                local real_root = real_char:FindFirstChild("HumanoidRootPart")
-                local clone_root = cloned_char:FindFirstChild("HumanoidRootPart")
-                if real_root and clone_root then
-                    real_root.CFrame = clone_root.CFrame
-                end
-            else
-                for _, p in real_char:GetChildren() do
-                    local clone_part = cloned_char:FindFirstChild(p.Name);
-                    if p:IsA("BasePart") and clone_part then
-                        p.CFrame = clone_part.CFrame;
-                        p.Velocity = Vector3.new();
-                    end;
-                end;
-            end
+			for _, p in real_char:GetChildren() do
+				local clone_part = cloned_char:FindFirstChild(p.Name);
+				if p:IsA("BasePart") and clone_part then
+					p.CFrame = clone_part.CFrame;
+					p.Velocity = Vector3.new();
+				end;
+			end;
 		end);
 		local real_humanoid = real_char.Humanoid;
 		local cloned_humanoid = cloned_char.Humanoid;
@@ -296,9 +282,9 @@ API.play_animation = function(url, speed)
     local player = get_local_player();
     if typeof(player) == "string" then return player end;
     
-    local real_char = API.get_real_character(player);
-    if not real_char then 
-        return "Cannot play animation, real character not found.";
+    local clone_char = API.get_clone(player);
+    if not clone_char then 
+        return "Cannot play animation, clone character not found.";
     end
     
     if fbi.animation.state.is_playing and fbi.animation.state.current_url == url then
@@ -328,54 +314,58 @@ API.play_animation = function(url, speed)
 		return "No keyframes array found for animation URL: " .. url;
 	end
 
-    table.clear(anim.original_transforms);
-    for _, joint in ipairs(real_char:GetDescendants()) do
-        if joint:IsA("Motor6D") then
-            anim.original_transforms[joint] = joint.Transform;
+    anim.state.keyframes = keyframes;
+
+    table.clear(anim.joints);
+    table.clear(anim.original_motor_c0s);
+    for _, descendant in ipairs(clone_char:GetDescendants()) do
+        if descendant:IsA("Motor6D") then
+            anim.joints[descendant.Part1.Name] = descendant;
+            anim.original_motor_c0s[descendant] = descendant.C0;
         end
     end
 
     anim.state.is_playing = true;
     anim.state.current_url = url;
-    fbi.flags.is_animating = true;
-    
-    local total_duration = keyframes[#keyframes].Time;
-	if total_duration <= 0 then API.stop_animation(); return end;
+    anim.state.total_duration = keyframes[#keyframes].Time;
+	if anim.state.total_duration <= 0 then API.stop_animation(); return end;
 	
-	local elapsed_time = 0;
+	anim.state.elapsed_time = 0;
 	
 	fbi.connections.animation_hb = fbi.services.run_service.Heartbeat:Connect(function(deltaTime)
 		if not anim.state.is_playing then return end;
 		
-		elapsed_time = (elapsed_time + (deltaTime * anim.state.speed)) % total_duration;
+		anim.state.elapsed_time = (anim.state.elapsed_time + (deltaTime * anim.state.speed)) % anim.state.total_duration;
 		
 		local current_frame, next_frame;
-		for i = 1, #keyframes - 1 do
-			if elapsed_time >= keyframes[i].Time and elapsed_time < keyframes[i+1].Time then
-				current_frame = keyframes[i];
-				next_frame = keyframes[i+1];
+		for i = 1, #anim.state.keyframes - 1 do
+			if anim.state.elapsed_time >= anim.state.keyframes[i].Time and anim.state.elapsed_time < anim.state.keyframes[i+1].Time then
+				current_frame = anim.state.keyframes[i];
+				next_frame = anim.state.keyframes[i+1];
 				break;
 			end
 		end
 		if not current_frame then
-			current_frame = keyframes[#keyframes];
-			next_frame = keyframes[1];
+			current_frame = anim.state.keyframes[#anim.state.keyframes];
+			next_frame = anim.state.keyframes[1];
 		end
 		
 		local frame_duration = next_frame.Time - current_frame.Time;
-		if frame_duration < 0 then frame_duration = frame_duration + total_duration end;
+		if frame_duration <= 0 then frame_duration = anim.state.total_duration end;
 
-		local alpha = (frame_duration > 0) and (elapsed_time - current_frame.Time) / frame_duration or 0;
-		
-		for joint, original_transform in pairs(anim.original_transforms) do
-            if joint and joint.Parent then
-                local pose1_cframe = current_frame.Data[joint.Name];
-                local pose2_cframe = next_frame.Data[joint.Name];
-                
-                if pose1_cframe and pose2_cframe then
-                    joint.Transform = original_transform * pose1_cframe:Lerp(pose2_cframe, alpha);
-                elseif pose1_cframe then
-                    joint.Transform = original_transform * pose1_cframe;
+		local alpha = (frame_duration > 0) and (anim.state.elapsed_time - current_frame.Time) / frame_duration or 0;
+		alpha = math.clamp(alpha, 0, 1)
+
+		for partName, pose_cframe in pairs(current_frame.Data) do
+            local motor = anim.joints[partName];
+            if motor and anim.original_motor_c0s[motor] then
+                local original_c0 = anim.original_motor_c0s[motor];
+                local next_pose_cframe = next_frame.Data and next_frame.Data[partName];
+
+                if next_pose_cframe then
+                    motor.C0 = original_c0 * pose_cframe:Lerp(next_pose_cframe, alpha);
+                else
+                    motor.C0 = original_c0 * pose_cframe;
                 end
             end
 		end
