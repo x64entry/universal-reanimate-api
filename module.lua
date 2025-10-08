@@ -9,6 +9,7 @@ local fbi = {
 	};
 	flags = {
 		reanimated = false;
+        is_animating = false;
 	};
 	clones = {};
 	connections = {
@@ -128,6 +129,7 @@ API.stop_animation = function()
     
     table.clear(fbi.animation.original_transforms);
     fbi.animation.state = { is_playing = false, current_url = nil, speed = 1.0 };
+    fbi.flags.is_animating = false; -- Allow main heartbeat to resume full sync
 end;
 
 --- Toggles the Reanimate state.
@@ -185,13 +187,22 @@ API.reanimate = function(bool, remote, args)
 				API.reanimate(false, remote, args);
 				return;
 			end;
-			for _, p in real_char:GetChildren() do
-				local clone_part = cloned_char:FindFirstChild(p.Name);
-				if p:IsA("BasePart") and clone_part then
-					p.CFrame = clone_part.CFrame;
-					p.Velocity = Vector3.new();
-				end;
-			end;
+            
+            if fbi.flags.is_animating then
+                local real_root = real_char:FindFirstChild("HumanoidRootPart")
+                local clone_root = cloned_char:FindFirstChild("HumanoidRootPart")
+                if real_root and clone_root then
+                    real_root.CFrame = clone_root.CFrame
+                end
+            else
+                for _, p in real_char:GetChildren() do
+                    local clone_part = cloned_char:FindFirstChild(p.Name);
+                    if p:IsA("BasePart") and clone_part then
+                        p.CFrame = clone_part.CFrame;
+                        p.Velocity = Vector3.new();
+                    end;
+                end;
+            end
 		end);
 		local real_humanoid = real_char.Humanoid;
 		local cloned_humanoid = cloned_char.Humanoid;
@@ -326,6 +337,7 @@ API.play_animation = function(url, speed)
 
     anim.state.is_playing = true;
     anim.state.current_url = url;
+    fbi.flags.is_animating = true;
     
     local total_duration = keyframes[#keyframes].Time;
 	if total_duration <= 0 then API.stop_animation(); return end;
