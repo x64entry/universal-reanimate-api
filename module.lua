@@ -21,8 +21,11 @@ local fbi = {
         animation_hb = nil;
 	};
 	real_chars = {};
-	
-    animation = {
+	callbacks = {
+		on_play = nil,
+		on_stop = nil,
+	},
+	animation = {
         cache = {};
         state = {
             is_playing = false;
@@ -105,6 +108,8 @@ end;
 API.stop_animation = function()
     if not fbi.animation.state.is_playing then return end;
     
+	local stopped_url = fbi.animation.state.current_url
+
     if fbi.connections.animation_hb then
         fbi.connections.animation_hb:Disconnect();
         fbi.connections.animation_hb = nil;
@@ -129,6 +134,10 @@ API.stop_animation = function()
     table.clear(fbi.animation.original_motor_c0s);
     table.clear(fbi.animation.joints);
     fbi.animation.state = { is_playing = false, current_url = nil, speed = 1.0, keyframes = nil, total_duration = 0, elapsed_time = 0 };
+
+	if fbi.callbacks.on_stop then
+		pcall(fbi.callbacks.on_stop, stopped_url)
+	end
 end;
 
 --- Toggles the Reanimate state.
@@ -314,11 +323,16 @@ API.play_animation = function(url, speed)
 
     local keyframe_data = anim.cache[url];
     if not keyframe_data then
-        local response = game:HttpGet(url);
-        local loaded_fn = loadstring(response);
-		if typeof(loaded_fn) ~= "function" then return "Animation Error: Invalid script from URL." end;
+        local success, response = pcall(game.HttpGet, game, url);
+		if not success then return "Animation Error: Failed to fetch URL." end
+
+        local loaded_fn, err = loadstring(response);
+		if not loaded_fn then return "Animation Error: Invalid script from URL. " .. tostring(err) end;
         
-        keyframe_data = loaded_fn();
+		local success, data = pcall(loaded_fn)
+		if not success then return "Animation Error: Script from URL failed to execute. " .. tostring(data) end
+        keyframe_data = data;
+
         if typeof(keyframe_data) ~= "table" then return "Animation Error: Script from URL did not return a table." end;
         
         anim.cache[url] = keyframe_data;
@@ -346,6 +360,10 @@ API.play_animation = function(url, speed)
 	if anim.state.total_duration <= 0 then API.stop_animation(); return end;
 	
 	anim.state.elapsed_time = 0;
+	
+	if fbi.callbacks.on_play then
+		pcall(fbi.callbacks.on_play, anim.state.current_url)
+	end
 	
 	fbi.connections.animation_hb = fbi.services.run_service.Heartbeat:Connect(function(deltaTime)
 		if not anim.state.is_playing then return end;
@@ -392,6 +410,28 @@ end;
 API.set_animation_speed = function(speed)
     fbi.animation.state.speed = tonumber(speed) or 1.0;
 end;
+
+--- Registers a callback function to be called when an animation starts playing.
+-- @param callback (function) - The function to call. It receives the animation URL as an argument.
+API.on_animation_play = function(callback)
+	if type(callback) == "function" then
+		fbi.callbacks.on_play = callback
+	end
+end
+
+--- Registers a callback function to be called when an animation stops.
+-- @param callback (function) - The function to call. It receives the animation URL that was stopped.
+API.on_animation_stop = function(callback)
+	if type(callback) == "function" then
+		fbi.callbacks.on_stop = callback
+	end
+end
+
+--- Returns the current animation playback state.
+-- @return boolean, string | nil - is_playing, current_url
+API.is_animation_playing = function()
+	return fbi.animation.state.is_playing, fbi.animation.state.current_url
+end
 
 --- Returns true if the local player is currently reanimated.
 -- @return boolean
