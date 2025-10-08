@@ -2,6 +2,11 @@
 
 A self-contained Roblox module for networkless (netless) reanimation, utilizing a vulnerability found in most ragdoll systems.
 
+### v1.3.0
+- **Added** `API.play_animation(url, speed)` to play custom keyframe animations on the reanimated character.
+- **Added** `API.stop_animation()` to halt any active animation.
+- **Changed** function names to use underscore convention (`is_reanimated`, `get_clone`, `get_real_character`) for consistency.
+
 ### v1.2.0
 - **Reverted** the previous transparent limbs update.
 - **Disabled** `RequiresNeck` in clone humanoid to prevent unwanted death.
@@ -23,9 +28,11 @@ A self-contained Roblox module for networkless (netless) reanimation, utilizing 
 
 -   [API Reference](#api-reference)
     -   [`API.reanimate(enable, remote, args)`](#apireanimateenable-remote-args)
-    -   [`API.isReanimated()`](#apiisreanimated)
-    -   [`API.getClone()`](#apigetclone)
-    -   [`API.getRealCharacter()`](#apigetrealcharacter)
+    -   [`API.play_animation(url, speed)`](#apiplay_animationurl-speed)
+    -   [`API.stop_animation()`](#apistop_animation)
+    -   [`API.is_reanimated()`](#apiis_reanimated)
+    -   [`API.get_clone()`](#apiget_clone)
+    -   [`API.get_real_character()`](#apiget_real_character)
 -   [Full Example](#full-example)
 
 ## API Reference
@@ -52,36 +59,66 @@ api.reanimate(false, unragdoll)
 
 ---
 
-### `API.isReanimated()`
+### `API.play_animation(url, speed)`
+
+Plays a custom animation on the real (visible) character model. Only works while reanimation is active.
+
+-   **`url`** (string): The raw URL to a script that returns a keyframe table (e.g., from `ichfickdeinemutta.pages.dev`).
+-   **`speed`** (number) `[optional]`: The playback speed multiplier. Defaults to `1.0`.
+
+**Note:** Calling this function with the same URL of a currently playing animation will stop it.
+
+```lua
+-- Play an animation at normal speed
+api.play_animation("https://example.com")
+
+-- Play another animation at double speed
+task.wait(5)
+api.play_animation("https://example.com", 2)
+```
+
+---
+
+### `API.stop_animation()`
+
+Stops any custom animation that is currently playing. The character will return to its default pose.
+
+```lua
+api.stop_animation()
+```
+
+---
+
+### `API.is_reanimated()`
 
 Returns whether the reanimation module is currently active.
 
 -   **Returns**: (boolean) - `true` if reanimated, `false` otherwise.
 
 ```lua
-if api.isReanimated() then
+if api.is_reanimated() then
     print("The player is currently reanimated.")
 end
 ```
 
 ---
 
-### `API.getClone()`
+### `API.get_clone()`
 
-Retrieves the active clone `Model` being controlled by the player.
+Retrieves the active, invisible clone `Model` being controlled by the player.
 
 -   **Returns**: (Model | nil) - The clone character model, or `nil` if not currently reanimated.
 
 ---
 
-### `API.getRealCharacter()`
+### `API.get_real_character()`
 
-Retrieves the original character `Model` that is being synchronized.
+Retrieves the original, visible character `Model` that is being synchronized and animated.
 
 -   **Returns**: (Model | nil) - The real character model, or `nil` if not currently reanimated.
 
 ```lua
-local real_character = api.getRealCharacter()
+local real_character = api.get_real_character()
 if real_character then
     -- You could, for example, change the color of the real character's parts
     real_character.Head.BrickColor = BrickColor.Red()
@@ -90,7 +127,7 @@ end
 
 ## Full Example
 
-This example demonstrates how to set up remotes and toggle a ragdoll state using the module.
+This example demonstrates how to enable reanimation, play a custom animation, and then clean up.
 
 ```lua
 local replicated_storage = game:GetService("ReplicatedStorage")
@@ -98,12 +135,18 @@ local ragdoll = replicated_storage:WaitForChild("RagdollEvent")
 local unragdoll = replicated_storage:WaitForChild("UnragdollEvent")
 
 -- Load the API
-local api = loadstring(game:HttpGet("https://raw.githubusercontent.com/x64entry/universal-reanimate-api/refs/heads/main/module.lua"))()
+local api = loadstring(game:HttpGet("https://raw.githubusercontent.com/x64entry/universal-reanimate-api/main/module.lua"))()
 
 -- Enable reanimation and fire the ragdoll event
 api.reanimate(true, ragdoll)
+if api.is_reanimated() then
+    -- Play a custom animation
+    local animation_url = <insert a url here>
+    api.play_animation(animation_url, 1.5) -- Play at 1.5x speed
+end
 
--- After 10 seconds, disable reanimation and fire the unragdoll event
+-- After 10 seconds, stop the animation, disable reanimation, and fire the unragdoll event
 task.wait(10)
+api.stop_animation()
 api.reanimate(false, unragdoll)
 ```
