@@ -120,6 +120,10 @@ API.stop_animation = function()
                 motor.C0 = orig_c0;
             end
         end
+        local clone_animate_script = clone_char:FindFirstChild("Animate")
+        if clone_animate_script then
+            clone_animate_script.Enabled = true
+        end
     end
     
     table.clear(fbi.animation.original_motor_c0s);
@@ -294,6 +298,17 @@ API.play_animation = function(url, speed)
     
     API.stop_animation();
     
+    local clone_anim_controller = clone_char:FindFirstChildOfClass("Humanoid") or clone_char:FindFirstChildOfClass("AnimationController")
+    if clone_anim_controller then
+        for _, track in ipairs(clone_anim_controller:GetPlayingAnimationTracks()) do
+            track:Stop()
+        end
+    end
+    local clone_animate_script = clone_char:FindFirstChild("Animate")
+    if clone_animate_script then
+        clone_animate_script.Enabled = false
+    end
+    
     local anim = fbi.animation;
     anim.state.speed = tonumber(speed) or 1.0;
 
@@ -370,6 +385,12 @@ API.play_animation = function(url, speed)
             end
 		end
 	end);
+end;
+
+--- Sets the playback speed for any currently playing animation.
+-- @param speed (number) - The new playback speed multiplier.
+API.set_animation_speed = function(speed)
+    fbi.animation.state.speed = tonumber(speed) or 1.0;
 end;
 
 --- Returns true if the local player is currently reanimated.
