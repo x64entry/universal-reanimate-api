@@ -302,7 +302,7 @@ API.play_animation = function(url, speed)
 
     local keyframe_data = anim.cache[url];
     if not keyframe_data then
-        local response = fbi.services.http_service:HttpGet(url);
+        local response = game:HttpGet(url);
         local loaded_fn = loadstring(response);
 		if typeof(loaded_fn) ~= "function" then return "Animation Error: Invalid script from URL." end;
         
